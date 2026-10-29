@@ -1433,9 +1433,7 @@ class App:
                 for key, value in run.result.measurements.items()
                 if key not in superseded_set
             }
-            run.result.tags.extend(
-                f"superseded:{key}" for key in superseded_keys
-            )
+            run.result.tags.extend(f"superseded:{key}" for key in superseded_keys)
 
     def _canonical_integrity_verdict(self, canonical_path: Path) -> "tuple[bool, str | None]":
         """The check lane's front-door verdict for one canonical file.
