@@ -2,6 +2,8 @@
 
 import io
 import logging
+import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -476,6 +478,27 @@ def test_cli_doctor_continues_past_unreadable_file(
     assert out.count("[error] unreadable:") == 1
     assert "NOT CONFORMING" in out
     assert "Traceback" not in out
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32" or os.geteuid() == 0,
+    reason="needs a file the current user cannot open",
+)
+def test_cli_doctor_continues_past_file_without_read_permission(
+    canonical_episode: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    locked = tmp_path / "locked.mcap"
+    locked.write_bytes(canonical_episode.read_bytes())
+    locked.chmod(0)
+    try:
+        assert cli_main(["doctor", str(locked), str(canonical_episode)]) == 1
+    finally:
+        locked.chmod(0o644)
+    out = capsys.readouterr().out
+    assert out.index(str(locked)) < out.index(str(canonical_episode))
+    assert out.count("[error] unreadable:") == 1
+    assert "Permission denied" in out
+    assert "verdict: CONFORMING" in out
 
 
 def test_empty_file_is_reported_as_empty(tmp_path: Path) -> None:

@@ -916,7 +916,9 @@ def _command_doctor(files: list[str]) -> int:
     for file in files:
         try:
             doctor_report = diagnose(file)
-        except (ValueError, FileNotFoundError) as error:
+        # OSError, not only FileNotFoundError: a file the user cannot open
+        # (PermissionError) is just as unreadable and must not end the batch.
+        except (ValueError, OSError) as error:
             print(f"doctor: {file}\n  [error] unreadable: {error}\n  verdict: NOT CONFORMING")
             exit_code = 1
             continue
