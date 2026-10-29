@@ -314,10 +314,20 @@ class QuarantineHistory:
             ).fetchall()
         finally:
             connection.close()
-        return {
-            str(episode_id): [str(tag) for tag in json.loads(tags_json)] if tags_json else []
-            for episode_id, tags_json in rows
-        }
+        result: dict[str, list[str]] = {}
+        for episode_id, tags_json in rows:
+            if not tags_json:
+                result[str(episode_id)] = []
+                continue
+            try:
+                result[str(episode_id)] = [str(tag) for tag in json.loads(tags_json)]
+            except json.JSONDecodeError:
+                # A corrupt tags_json should not crash quarantine reads: treat
+                # the episode as having no carried tags rather than failing the
+                # whole batch. The corrupt row remains in the catalog for
+                # manual inspection.
+                result[str(episode_id)] = []
+        return result
 
     def close(self) -> None:
         """Drop the snapshot, so a reused history re-reads the table."""
