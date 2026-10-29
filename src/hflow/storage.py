@@ -589,11 +589,42 @@ class BucketStorageRoot:
             # the sidecar, so the recorded etag always matches the downloaded
             # bytes even if the object was replaced between the two requests.
             downloaded_etag = get_result.meta["e_tag"]
-            _download_to_file_atomically(get_result, local_file)
-            if downloaded_etag is not None:
-                _write_local_bytes_atomically(sidecar, downloaded_etag.encode())
-            elif sidecar.exists():
-                sidecar.unlink()
+            # Download payload and sidecar to temp files, then rename both so
+            # a crash between the two writes never leaves a payload whose
+            # sidecar is missing or mismatched. The mirror-entry lock holds
+            # for both renames, so concurrent fetches observe a consistent
+            # (payload, etag) pair.
+            payload_stream = tempfile.NamedTemporaryFile(
+                dir=local_file.parent,
+                prefix=f".{local_file.name}.",
+                suffix=".downloading",
+                delete=False,
+            )
+            payload_temp = Path(payload_stream.name)
+            sidecar_stream = tempfile.NamedTemporaryFile(
+                dir=sidecar.parent,
+                prefix=f".{sidecar.name}.",
+                suffix=".tmp",
+                delete=False,
+            )
+            sidecar_temp = Path(sidecar_stream.name)
+            try:
+                for chunk in get_result:
+                    payload_stream.write(chunk)
+                payload_stream.close()
+                _apply_default_permissions(payload_temp)
+                if downloaded_etag is not None:
+                    sidecar_stream.write(downloaded_etag.encode())
+                    sidecar_stream.close()
+                    _apply_default_permissions(sidecar_temp)
+                payload_temp.replace(local_file)
+                if downloaded_etag is not None:
+                    sidecar_temp.replace(sidecar)
+                elif sidecar.exists():
+                    sidecar.unlink()
+            finally:
+                payload_temp.unlink(missing_ok=True)
+                sidecar_temp.unlink(missing_ok=True)
         return local_file
 
     def publish(self, local_file: Path, relative: str) -> str:
